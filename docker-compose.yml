@@ -1,0 +1,73 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8080:8080"
+    environment:
+      - POSTGRES_DSN=postgres://postgres:postgres@postgres:5432/weatherdb?sslmode=disable
+      - JWT_KEY=2f34f2r2g7ry23r8h23r89uh32
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=weatherdb
+      - METEOSOURCE_API_KEY=my4hre30vvzemhpk8jt2o34tqn0dvfj35fytn7s7
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - my_network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://backend:8080
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - my_network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  # Database service
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=weatherdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - my_network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+networks:
+  my_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.16.0.0/16
+          gateway: 172.16.254.254
+
+volumes:
+  postgres_data:

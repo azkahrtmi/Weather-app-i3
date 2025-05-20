@@ -5,6 +5,7 @@ import (
 	"backend/handlers"
 	"backend/middleware"
 	"backend/scheduler"
+	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -14,8 +15,13 @@ func main() {
 	r := gin.Default()
 	config.ConnectDatabase()
 
-	scheduler.StartWeatherScheduler() 
-	
+	// Run database migrations
+	if err := config.RunMigrations(); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+
+	scheduler.StartWeatherScheduler()
+
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -28,7 +34,6 @@ func main() {
 		c.Next()
 	})
 
-	
 	r.POST("/login", handlers.Login)
 	r.GET("/validate", middleware.RequireAuth, handlers.Validate)
 	r.POST("/locations", middleware.RequireAuth, handlers.SaveLocation)
@@ -38,14 +43,9 @@ func main() {
 	r.GET("/predictions", middleware.RequireAuth, handlers.GetPredictions)
 	r.GET("/locations/:id/predictions", middleware.RequireAuth, handlers.GetPredictionsByLocation)
 
-
-
-
-	
 	if os.Getenv("JWT_KEY") == "" {
 		os.Setenv("JWT_KEY", "SECRET")
 	}
 
 	r.Run(":8080")
 }
-

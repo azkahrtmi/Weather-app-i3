@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS locations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    weather_summary VARCHAR(255),
+    temperature DOUBLE PRECISION,
+    wind_speed DOUBLE PRECISION,
+    update_interval_hours INTEGER,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id SERIAL PRIMARY KEY,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+    date VARCHAR(255) NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Down migration
+DROP TABLE IF EXISTS predictions;
+DROP TABLE IF EXISTS locations;

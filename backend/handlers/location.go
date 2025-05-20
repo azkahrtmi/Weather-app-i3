@@ -57,8 +57,8 @@ func SaveLocation(c *gin.Context) {
 		return
 	}
 
-	// Simpan ke tabel prediction
-	insertPrediction := `INSERT INTO prediction (location_id, date, summary) VALUES ($1, $2, $3)`
+	// Simpan ke tabel predictions
+	insertPrediction := `INSERT INTO predictions (location_id, date, summary) VALUES ($1, $2, $3)`
 	_, err = config.DB.Exec(insertPrediction, locationID, forecastDay, forecastSummary)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert prediction", "detail": err.Error()})
@@ -70,18 +70,16 @@ func SaveLocation(c *gin.Context) {
 	})
 }
 
-
-
 func GetLocations(c *gin.Context) {
-    var locations []models.Location
+	var locations []models.Location
 
-    err := config.DB.Select(&locations, "SELECT * FROM locations ORDER BY id")
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch data"})
-        return
-    }
+	err := config.DB.Select(&locations, "SELECT * FROM locations ORDER BY id")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch data"})
+		return
+	}
 
-    c.JSON(http.StatusOK, locations)
+	c.JSON(http.StatusOK, locations)
 }
 
 func DeleteLocation(c *gin.Context) {
@@ -93,16 +91,16 @@ func DeleteLocation(c *gin.Context) {
 	}
 
 	_, err = config.DB.Exec("DELETE FROM locations WHERE id = $1", id)
-if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete location"})
-    return
-}
-
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete location"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Location deleted successfully"})
 }
 
 func UpdateLocationName(c *gin.Context) {
+	
 	idParam := c.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil {
@@ -110,40 +108,42 @@ func UpdateLocationName(c *gin.Context) {
 		return
 	}
 
+	
 	var req struct {
-		Name string `json:"name"`
+		Name      string  `json:"name"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	// Ambil latitude & longitude berdasarkan ID
-	var latitude, longitude float64
-	err = config.DB.QueryRow(`SELECT latitude, longitude FROM locations WHERE id = $1`, id).Scan(&latitude, &longitude)
+	
+	weather, err := services.FetchWeatherData(req.Latitude, req.Longitude)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve location coordinates"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "Failed to fetch weather data",
+			"detail": err.Error(),
+		})
 		return
 	}
 
-	// Ambil data cuaca terbaru dari API eksternal
-	weather, err := services.FetchWeatherData(latitude, longitude)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch weather data", "detail": err.Error()})
-		return
-	}
-
-	// Update nama + cuaca
+	
 	updateQuery := `
 		UPDATE locations
 		SET name = $1,
-			weather_summary = $2,
-			temperature = $3,
-			wind_speed = $4,
+			latitude = $2,
+			longitude = $3,
+			weather_summary = $4,
+			temperature = $5,
+			wind_speed = $6,
 			updated_at = NOW()
-		WHERE id = $5`
+		WHERE id = $7`
 	_, err = config.DB.Exec(updateQuery,
 		req.Name,
+		req.Latitude,
+		req.Longitude,
 		weather.Current.Summary,
 		weather.Current.Temperature,
 		weather.Current.Wind.Speed,
@@ -154,13 +154,41 @@ func UpdateLocationName(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Location updated successfully with new weather data"})
+	// Ambil prediksi cuaca 1 hari ke depan
+	forecastDay, forecastSummary, err := services.FetchOneDayForecast(req.Latitude, req.Longitude)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "Failed to fetch forecast",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	
+deleteOld := `DELETE FROM predictions WHERE location_id = $1 AND date = $2`
+_, err = config.DB.Exec(deleteOld, id, forecastDay)
+if err != nil {
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete old prediction", "detail": err.Error()})
+	return
 }
+
+
+insertPrediction := `INSERT INTO predictions (location_id, date, summary) VALUES ($1, $2, $3)`
+_, err = config.DB.Exec(insertPrediction, id, forecastDay, forecastSummary)
+if err != nil {
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert prediction", "detail": err.Error()})
+	return
+}
+
+
+	c.JSON(http.StatusOK, gin.H{"message": "Location updated successfully with new weather and forecast"})
+}
+
 
 func GetPredictions(c *gin.Context) {
 	var predictions []models.Prediction
 
-	err := config.DB.Select(&predictions, "SELECT * FROM prediction ORDER BY created_at DESC")
+	err := config.DB.Select(&predictions, "SELECT * FROM predictions ORDER BY created_at DESC")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch predictions"})
 		return
@@ -174,7 +202,7 @@ func GetPredictionsByLocation(c *gin.Context) {
 	locationID := c.Param("id")
 	var predictions []models.Prediction
 
-	err := config.DB.Select(&predictions, "SELECT * FROM prediction WHERE location_id = $1 ORDER BY date DESC", locationID)
+	err := config.DB.Select(&predictions, "SELECT * FROM predictions WHERE location_id = $1 ORDER BY date DESC", locationID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch predictions"})
 		return
@@ -182,6 +210,3 @@ func GetPredictionsByLocation(c *gin.Context) {
 
 	c.JSON(http.StatusOK, predictions)
 }
-
-
-
