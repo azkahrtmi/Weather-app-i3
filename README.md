@@ -1,1 +1,2 @@
-# Weather-app-i3
+# Weather-app
+## This is the first app after i migrate my github
